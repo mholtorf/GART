@@ -1,0 +1,296 @@
+---
+title: "GART Map"
+format: html
+editor: source
+---
+
+## Packages
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+pacman::p_load(
+    "tidyverse",     # ggplot, dplyr, and friends
+    "sf",            # Handle spatial data in R in a tidy way
+    "tigris",        # Access geographic data from the US Census
+    "tidygeocoder",  # Automated geocoding
+    "osrm",          # Access OSRM through R
+    "ggrepel",       # Nicer non-overlapping labels
+    "glue",          # Easier string interpolation
+    "scales",        # Nicer labeling functions
+    "patchwork",     # Combine plots nicely
+    "ggspatial",      # Nicer map features like scale bars
+    "extrafont",
+    "officer"
+)
+
+extrafont::font_import(prompt = FALSE, pattern = "arial")
+
+# Custom ggplot theme to make pretty plots
+# Get the font at https://fonts.google.com/specimen/Overpass
+theme_roadtrip <- function() {
+  theme_void(base_family = "Arial") +
+    theme(
+      plot.title = element_text(family = "Arial", 
+                                face = "bold", 
+                                hjust = 0.5,
+                                color = "#4F453D"),
+      plot.subtitle = element_text(family = "Arial", 
+                                face = "bold", 
+                                hjust = 0.5,
+                                color = "#4F453D")
+    )
+}
+
+# Make labels use Overpass by default
+update_geom_defaults("label_repel", 
+                     list(family = "Arial",
+                          fontface = "plain"))
+update_geom_defaults("label", 
+                     list(family = "Arial",
+                          fontface = "plain"))
+
+update_geom_defaults("text_repel", 
+                     list(family = "Arial",
+                          fontface = "plain"))
+update_geom_defaults("text", 
+                     list(family = "Arial",
+                          fontface = "plain"))
+```
+
+```{r}
+#' Format duration in minutes and hours
+#'
+#' This function takes a numeric input \code{x} representing a duration in minutes,
+#' rounds it to the nearest 15 minutes, and formats the result as a string
+#' indicating the number of hours and minutes in the duration.
+#'
+#' @param x A numeric input representing a duration in minutes.
+#' @return A character vector of formatted duration strings.
+#' @examples
+#' fmt_duration(c(93, 1007, 3056))
+fmt_duration <- function(x) {
+  # Round to the nearest 15 minutes
+  n_seconds <- round(seconds(x * 60) / (15 * 60)) * (15 * 60)
+  n_seconds <- seconds_to_period(n_seconds)
+  
+  out <- map_chr(n_seconds, \(n) {
+    if (seconds(n) <= 59) {
+      # If this is less than an hour, don't format anything with hours
+      glue("{MM} minutes", MM = minute(n))
+    } else {
+      # I only want to format this as a number of hours. If the duration is
+      # longer than 24 hours, seconds_to_period() rolls over into days (i.e.
+      # seconds_to_period(60 * 60 * 24) returns "1d 0H 0M 0S"), and it shows
+      # zero hours. So we extract the day part of the period, multiply it by 24,
+      # and add it to the hour component that we want to display
+      extra_day_hours <- day(n) * 24
+  
+      glue("{HH} hour{s} {MM} minutes",
+        HH = scales::label_comma()(hour(n) + extra_day_hours),
+        MM = minute(n),
+        s = ifelse(hour(n) == 1, "", "s")
+      )
+    }
+  })
+  
+  return(out)
+}
+
+fmt_miles <- scales::label_number(accuracy = 10, suffix = " miles", big.mark = ",")
+
+miles_to_meters <- function(x) {
+  x * 1609.344
+}
+
+meters_to_miles <- function(x) {
+  x / 1609.344
+}
+
+km_to_miles <- function(x) {
+  meters_to_miles(x * 1000)
+}
+```
+
+## State Data
+```{r}
+us_states <- states(resolution = "20m", year = 2022, cb = TRUE)
+
+lower_48 <- us_states %>% 
+  filter(!(NAME %in% c("Alaska", "Hawaii", "Puerto Rico")))
+```
+
+```{r}
+ggplot() + 
+  geom_sf(data = lower_48) +
+  coord_sf(crs = st_crs("ESRI:102003")) +  # Albers
+  theme_roadtrip()
+```
+
+## Locations
+```{r}
+stops <- read.csv(here::here("data","locations.csv"))
+```
+
+```{r}
+stops_projected <- stops %>% 
+  st_as_sf(coords = c("lon", "lat"), crs = st_crs("EPSG:4326"))
+```
+
+```{r}
+ggplot() +
+  geom_sf(data = lower_48) +
+  geom_sf(data = stops_projected) +
+  geom_label_repel(
+    data = stops_projected,
+    aes(label = location, geometry = geometry),
+    stat = "sf_coordinates", seed = 1234,
+    size = 3, segment.color = clrs[3], min.segment.length = 0
+  ) +
+  annotation_scale(
+    location = "bl", bar_cols = c("grey30", "white"),
+    unit_category = "imperial", text_family = "Overpass"
+  ) +
+  coord_sf(crs = st_crs("ESRI:102003")) +  # Albers
+  theme_roadtrip()
+```
+
+## Routing
+```{r}
+routes_raw <- stops_projected %>% 
+  rename(
+    origin_geometry = geometry,
+    origin_location = location
+  ) %>% 
+  mutate(
+    destination_geometry = lead(origin_geometry),
+    destination_location = lead(origin_location)
+  ) %>% 
+  filter(row_number() != n())
+
+routes_raw
+```
+
+```{r}
+routes_geocoded_raw <- routes_raw %>% 
+  rowwise() %>% 
+  mutate(route = osrmRoute(
+    src = origin_geometry, 
+    dst = destination_geometry)
+  )
+```
+
+```{r}
+routes_geocoded <- routes_geocoded_raw %>% 
+  unnest(route, names_sep = "_") %>% 
+  st_set_geometry("route_geometry") %>% 
+  mutate(
+    distance_miles = km_to_miles(route_distance),
+    distance_text = fmt_miles(distance_miles),
+    duration_text = fmt_duration(route_duration)
+  )
+
+routes_geocoded
+```
+
+```{r}
+ggplot() +
+  geom_sf(data = lower_48) +
+  geom_sf(data = routes_geocoded, color = clrs[1]) +
+  geom_sf(data = stops_projected) +
+  geom_label_repel(
+    data = stops_projected,
+    aes(label = location, geometry = geometry),
+    stat = "sf_coordinates", seed = 1234,
+    size = 3, segment.color = clrs[3], min.segment.length = 0
+  ) +
+  annotation_scale(
+    location = "bl", bar_cols = c("grey30", "white"),
+    unit_category = "imperial", text_family = "Overpass"
+  ) +
+  coord_sf(crs = st_crs("ESRI:102003")) +  # Albers
+  theme_roadtrip()
+```
+
+```{r}
+states_crossed_through <- st_intersection(
+  st_transform(lower_48, st_crs(routes_geocoded)),
+  routes_geocoded
+)
+
+# There are 32 rows here, but 18 unique states (i.e. one day will end in a state
+# and start the next day in the same state, so it gets counted twice)
+states_crossed_through %>% 
+  select(STATEFP, NAME, day)
+
+unique(states_crossed_through$NAME)
+
+# Create a column that flags if the state is cross through
+lower_48_highlighted <- lower_48 %>% 
+  mutate(visited = NAME %in% unique(states_crossed_through$NAME))
+```
+
+```{r}
+gart_final <-
+  ggplot() +
+  geom_sf(data = lower_48_highlighted, color = "white", aes(fill = visited)) +
+  geom_sf(data = routes_geocoded, color = "#B5876D") +
+  geom_sf(data = stops_projected, color = "#B5876D") +
+  geom_text_repel(
+    data = stops_projected,
+    aes(label = location, geometry = geometry),
+    stat = "sf_coordinates", seed = 1234,
+    size = 3, 
+    min.segment.length = Inf
+  ) +
+  # annotation_scale(
+  #   location = "bl", bar_cols = c("grey30", "white"),
+  #   unit_category = "imperial", text_family = "Overpass"
+  # ) +
+  scale_fill_manual(values = c("#F1E8D7", "#E3D0AB"), guide = "none") +
+  labs(title = "Great American Road Trip", subtitle = "March 23, 2024 - May 26, 2024") +
+  coord_sf(crs = st_crs("ESRI:102003")) +  # Albers
+  theme_roadtrip() +
+  theme(plot.background = element_rect(fill = "#A2BEAB"))
+
+ggsave(
+  "gartmap_v1.svg",
+  device = "svg",
+  path = here::here("img"),
+  width = 11,
+  height = 8.5
+)
+
+```
+
+```{r}
+create_dml <- function(plot){
+  rvg::dml(ggobj = plot)
+}
+
+# function to export plot to PowerPoint ----
+create_pptx <- function(plot, path, left = 0.5, top = 1, width = 9, height = 4.95){
+  
+    # if file does not yet exist, create new PowerPoint ----
+    if (!file.exists(path)) {
+        out <- officer::read_pptx()
+    }
+    # if file exist, append slides to exisiting file ----
+    else {
+        out <- officer::read_pptx(path)
+    }
+  
+    out %>% 
+      officer::add_slide() %>% 
+      officer::ph_with(plot, location = officer::ph_location(
+        width = width, height = height, left = left, top = top)) %>% 
+      base::print(target = path)
+}
+```
+
+```{r}
+gart_dml <- purrr::map(last_plot(), create_dml)
+
+create_pptx(plot = gart_dml,
+            path = here::here("img", "gartmap_v1.pptx"))
+```

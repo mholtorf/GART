@@ -6,8 +6,6 @@ editor: source
 
 ## Packages
 
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
-
 ```{r}
 pacman::p_load(
     "tidyverse",     # ggplot, dplyr, and friends
@@ -24,19 +22,24 @@ pacman::p_load(
     "officer"
 )
 
-extrafont::font_import(prompt = FALSE, pattern = "arial")
+## Load windows fonts -------------------------------------------------------------
+extrafont::font_import(prompt = FALSE, pattern = "GOTHIC.TTF") 
+extrafont::loadfonts(device="win", quiet=TRUE)
+extrafont::fonts()
 
 # Custom ggplot theme to make pretty plots
 # Get the font at https://fonts.google.com/specimen/Overpass
 theme_roadtrip <- function() {
-  theme_void(base_family = "Arial") +
+  theme_void(base_family = "Century Gothic") +
     theme(
-      plot.title = element_text(family = "Arial", 
+      plot.title = element_text(family = "Century Gothic", 
                                 face = "bold", 
+                                size = 20,
                                 hjust = 0.5,
                                 color = "#4F453D"),
-      plot.subtitle = element_text(family = "Arial", 
+      plot.subtitle = element_text(family = "Century Gothic", 
                                 face = "bold", 
+                                size = 16,
                                 hjust = 0.5,
                                 color = "#4F453D")
     )
@@ -44,17 +47,17 @@ theme_roadtrip <- function() {
 
 # Make labels use Overpass by default
 update_geom_defaults("label_repel", 
-                     list(family = "Arial",
+                     list(family = "Century Gothic",
                           fontface = "plain"))
 update_geom_defaults("label", 
-                     list(family = "Arial",
+                     list(family = "Century Gothic",
                           fontface = "plain"))
 
 update_geom_defaults("text_repel", 
-                     list(family = "Arial",
+                     list(family = "Century Gothic",
                           fontface = "plain"))
 update_geom_defaults("text", 
-                     list(family = "Arial",
+                     list(family = "Century Gothic",
                           fontface = "plain"))
 ```
 
@@ -143,13 +146,19 @@ ggplot() +
   geom_sf(data = stops_projected) +
   geom_label_repel(
     data = stops_projected,
-    aes(label = location, geometry = geometry),
-    stat = "sf_coordinates", seed = 1234,
-    size = 3, segment.color = clrs[3], min.segment.length = 0
+    aes(label = location, 
+        geometry = geometry),
+    stat = "sf_coordinates", 
+    seed = 1234,
+    size = 3, 
+    segment.color = "black", 
+    min.segment.length = 0
   ) +
   annotation_scale(
-    location = "bl", bar_cols = c("grey30", "white"),
-    unit_category = "imperial", text_family = "Overpass"
+    location = "bl",
+    bar_cols = c("grey30", "white"),
+    unit_category = "imperial", 
+    text_family = "Overpass"
   ) +
   coord_sf(crs = st_crs("ESRI:102003")) +  # Albers
   theme_roadtrip()
@@ -196,13 +205,16 @@ routes_geocoded
 ```{r}
 ggplot() +
   geom_sf(data = lower_48) +
-  geom_sf(data = routes_geocoded, color = clrs[1]) +
+  geom_sf(data = routes_geocoded, color = "black") +
   geom_sf(data = stops_projected) +
   geom_label_repel(
     data = stops_projected,
-    aes(label = location, geometry = geometry),
-    stat = "sf_coordinates", seed = 1234,
-    size = 3, segment.color = clrs[3], min.segment.length = 0
+    aes(label = location, 
+        geometry = geometry),
+    stat = "sf_coordinates", 
+    seed = 1234,
+    size = 3, segment.color = "grey80", 
+    min.segment.length = 0
   ) +
   annotation_scale(
     location = "bl", bar_cols = c("grey30", "white"),
@@ -254,13 +266,22 @@ gart_final <-
   labs(title = "Great American Road Trip", subtitle = "March 23, 2024 - May 26, 2024") +
   coord_sf(crs = st_crs("ESRI:102003")) +  # Albers
   theme_roadtrip() +
-  theme(plot.background = element_rect(fill = "#A2BEAB"))
+  theme(plot.background = element_rect(fill = "#A2BEAB",
+                                       color = "#A2BEAB"))
 
 gart_final
 
 ggsave(
   "gartmap_v1.svg",
   device = "svg",
+  path = here::here("img"),
+  width = 11,
+  height = 8.5
+)
+
+ggsave(
+  "gartmap_v1.png",
+  device = "png",
   path = here::here("img"),
   width = 11,
   height = 8.5

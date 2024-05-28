@@ -231,6 +231,8 @@ lower_48_highlighted <- lower_48 %>%
 ```
 
 ```{r}
+
+
 gart_final <-
   ggplot() +
   geom_sf(data = lower_48_highlighted, color = "white", aes(fill = visited)) +
@@ -238,7 +240,8 @@ gart_final <-
   geom_sf(data = stops_projected, color = "#B5876D") +
   geom_text_repel(
     data = stops_projected,
-    aes(label = location, geometry = geometry),
+    aes(label = str_wrap(location, 15), 
+        geometry = geometry),
     stat = "sf_coordinates", seed = 1234,
     size = 3, 
     min.segment.length = Inf
@@ -252,6 +255,8 @@ gart_final <-
   coord_sf(crs = st_crs("ESRI:102003")) +  # Albers
   theme_roadtrip() +
   theme(plot.background = element_rect(fill = "#A2BEAB"))
+
+gart_final
 
 ggsave(
   "gartmap_v1.svg",
@@ -289,7 +294,7 @@ create_pptx <- function(plot, path, left = 0.5, top = 1, width = 9, height = 4.9
 ```
 
 ```{r}
-gart_dml <- purrr::map(last_plot(), create_dml)
+gart_dml <- create_dml(gart_final)
 
 create_pptx(plot = gart_dml,
             path = here::here("img", "gartmap_v1.pptx"))
